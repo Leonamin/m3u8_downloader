@@ -74,11 +74,14 @@ content_2048000_10.ts?solexpire=1705262771&solpathlen=189&soltoken=b2a21284e5046
 ```json
 [
     {
-        "name": "video_title",
-        "m3u8_link": "aaa"
+        "name": "naver_test_video",
+        "m3u8_link": "https://navertv-jtbc-h.smartmediarep.com/smc/navertv/adaptive/eng/J01_VO10742443/2f6a7462632f435030303030303030312f70726f672f6472616d612f73616d64616c72692f323032342f30312f332f564f31303734323434333033323732383637322e736d696c/0-0-0/content_2048000.m3u8?solexpire=1705262771&solpathlen=189&soltoken=b2a21284e5046e3ab98309e64dfb837c&soltokenrule=c29sZXhwaXJlfHNvbHBhdGhsZW58c29sdXVpZA==&soluriver=2&soluuid=e2560257-3ade-43ca-b478-ac385c796428"
     }
 ]
 ```
 
 ### 기타 설정
 - max_download_workers을 설정하면 ts파일을 동시에 다운로드 받는 수를 늘릴 수 있습니다.(**주의 워커 스레드가 많으면 프로그램이 멈출 수도 있습니다. 적당히 사용하세요**)
+
+### 찾는법
+![how_to_find](docs/images/how_to_find_m3u8.png)
