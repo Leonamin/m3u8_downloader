@@ -6,12 +6,7 @@ import concurrent.futures
 
 from settings import *
 from util.utils import make_folder
-
-
-def download_m3u8_content(url, filename):
-    response = requests.get(url)
-    with open(filename, 'wb') as f:
-        f.write(response.content)
+from util.m3u8_utils import get_m3u8_content
 
 
 def read_m3u8_link_list():
@@ -19,16 +14,10 @@ def read_m3u8_link_list():
         return json.load(file)
 
 
-def save_m3u8_content(m3u8_content, file_name):
-    file_path = os.path.join(m3u8_contents_folder, f'{
-                             file_name}_m3u8_content.txt')
-    counter = 2
-    while os.path.exists(file_path):
-        file_path = os.path.join(m3u8_contents_folder, f'{
-                                 file_name}_m3u8_content_{counter}.txt')
-        counter += 1
-    with open(file_path, 'w') as file:
-        file.write(m3u8_content)
+def download_ts_file(url, filename):
+    response = requests.get(url)
+    with open(filename, 'wb') as f:
+        f.write(response.content)
 
 
 def extract_ts_urls(m3u8_content, base_url):
@@ -42,7 +31,7 @@ def extract_ts_urls(m3u8_content, base_url):
 
 def download_ts_files_parallel(ts_urls, output_dir):
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_download_workers) as executor:
-        futures = [executor.submit(download_m3u8_content, url, os.path.join(
+        futures = [executor.submit(download_ts_file, url, os.path.join(
             output_dir, url.split('/')[-1])) for url in ts_urls]
         for future in concurrent.futures.as_completed(futures):
             future.result()
@@ -60,21 +49,14 @@ def merge_ts_files_to_mp4(input_dir, output_file):
 
 
 def process_content(item):
+    succeedList = []
+    failedList = []
     try:
         # m3u8 내용 다운로드 및 저장
-        m3u8_response = requests.get(item['m3u8_link'])
-        m3u8_content = m3u8_response.text
-        save_m3u8_content(m3u8_content, item['name'])
+        base_url, media_playlist = get_m3u8_content(
+            item['m3u8_link'], item['name'])
 
-        #  ts 파일 URL 생성을 위한 기본 URL 설정
-        # ts_url = item['ts_base_link']
-        # if len(ts_url) == 0:
-        #     ts_url = item['m3u8_link'].rsplit('/', 1)[0] + '/'
-
-        ts_url = item['m3u8_link'].rsplit('/', 1)[0] + '/'
-
-        # ts 파일 URL 생성
-        ts_urls = extract_ts_urls(m3u8_content, ts_url)
+        ts_urls = extract_ts_urls(media_playlist, base_url)
 
         # ts 파일 다운로드 폴더 생성 및 다운로드
         ts_output_dir = os.path.join(ts_files_folder, item['name'])
@@ -90,13 +72,18 @@ def process_content(item):
         for ts_file in os.listdir(ts_output_dir):
             os.remove(os.path.join(ts_output_dir, ts_file))
         os.rmdir(ts_output_dir)
+        succeedList.append(item['name'])
     except Exception as e:
         print(f"Error processing {item['name']}: {e}")
+        failedList.append(item['name'])
+
+    print(f"Succeed: {succeedList}")
+
+    print(f"Failed: {failedList}")
 
 
 if __name__ == '__main__':
     make_folder()
-
     content_list = read_m3u8_link_list()
     for content in content_list:
         process_content(content)
