@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import requests
 import subprocess
 import concurrent.futures
@@ -24,28 +25,54 @@ def extract_ts_urls(m3u8_content, base_url):
     lines = m3u8_content.split('\n')
     ts_urls = []
     for i in range(len(lines)):
-        if lines[i].endswith('.ts'):
+        if (
+            lines[i].endswith('.ts')
+            or lines[i].endswith('.jpeg')
+            or lines[i].endswith('.jpg')
+        ):
             ts_urls.append(base_url + lines[i])
     return ts_urls
 
 
 def download_ts_files_parallel(ts_urls, output_dir):
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_download_workers) as executor:
-        futures = [executor.submit(download_ts_file, url, os.path.join(
-            output_dir, url.split('/')[-1])) for url in ts_urls]
+        futures = []
+        for url in ts_urls:
+            original_name = url.split('/')[-1]
+            base_name = normalize_segment_basename(original_name)
+            file_path = os.path.join(output_dir, base_name)
+            futures.append(executor.submit(download_ts_file, url, file_path))
         for future in concurrent.futures.as_completed(futures):
             future.result()
 
 
 def merge_ts_files_to_mp4(input_dir, output_file):
-    ts_files = sorted([os.path.join(input_dir, f)
-                      for f in os.listdir(input_dir) if f.endswith('.ts')])
-    with open('file_list.txt', 'w') as f:
+    def sort_key(path: str):
+        name = os.path.basename(path)
+        match = re.search(r'(\d+)(?=\.ts$)', name)
+        return int(match.group(1)) if match else name
+
+    ts_files = sorted(
+        [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.endswith('.ts')],
+        key=sort_key,
+    )
+
+    if not ts_files:
+        raise RuntimeError('No segment files (.ts) found to merge.')
+
+    with open('file_list.txt', 'w', encoding='utf-8', newline='\n') as f:
         for file in ts_files:
-            f.write(f"file '{file}'\n")
-    subprocess.run(['ffmpeg', '-f', 'concat', '-safe', '0',
-                   '-i', 'file_list.txt', '-c', 'copy', output_file])
-    os.remove('file_list.txt')
+            normalized = file.replace('\\', '/').replace("'", r"\'")
+            f.write(f"file '{normalized}'\n")
+
+    try:
+        subprocess.run(
+            ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', 'file_list.txt', '-c', 'copy', output_file],
+            check=True,
+        )
+    finally:
+        if os.path.exists('file_list.txt'):
+            os.remove('file_list.txt')
 
 
 def process_content(item):
@@ -63,6 +90,7 @@ def process_content(item):
         if not os.path.exists(ts_output_dir):
             os.makedirs(ts_output_dir)
         download_ts_files_parallel(ts_urls, ts_output_dir)
+        print(f"Downloaded {len(ts_urls)} segments (saved as .ts)")
 
         # 파일 병합
         output_video_file = os.path.join(videos_folder, f"{item['name']}.mp4")
@@ -78,8 +106,18 @@ def process_content(item):
         failedList.append(item['name'])
 
     print(f"Succeed: {succeedList}")
-
     print(f"Failed: {failedList}")
+
+
+def normalize_segment_basename(original_name: str, pad_width: int = 5) -> str:
+    name_no_query = original_name.split('?')[0]
+    name_root, _ext = os.path.splitext(name_no_query)
+    match = re.search(r'^(.*?)(\d+)$', name_root)
+    if match:
+        prefix, number_str = match.groups()
+        padded_number = number_str.zfill(pad_width)
+        return f"{prefix}{padded_number}.ts"
+    return f"{name_root}.ts"
 
 
 if __name__ == '__main__':
